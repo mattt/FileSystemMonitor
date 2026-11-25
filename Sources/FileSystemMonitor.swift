@@ -354,7 +354,7 @@ public actor FileSystemMonitor {
         eventContinuation.finish()
     }
 
-    nonisolated fileprivate func handleEvent(_ event: Event) {
+    nonisolated func handleEvent(_ event: Event) {
         eventContinuation.yield(event)
     }
 }
@@ -734,22 +734,12 @@ extension FileSystemMonitor.Configuration {
 extension FileSystemMonitor {
     /// Filter events to only include file operations
     public var fileEvents: AsyncStream<Event> {
-        events.filter { event in
-            if let item = event.item {
-                return item.path.isFile
-            }
-            return false
-        }
+        events.filter { $0.itemIsDirectory == false }
     }
 
     /// Filter events to only include directory operations
     public var directoryEvents: AsyncStream<Event> {
-        events.filter { event in
-            if let item = event.item {
-                return item.path.isDirectory
-            }
-            return false
-        }
+        events.filter { $0.itemIsDirectory == true }
     }
 
     /// Filter events to only include creation events
@@ -769,19 +759,20 @@ extension FileSystemMonitor {
 }
 
 // MARK: - Private Extensions
-extension String {
-    /// Check if the path represents a file
-    fileprivate var isFile: Bool {
-        var isDirectory: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: self, isDirectory: &isDirectory)
-        return exists && !isDirectory.boolValue
-    }
+extension FileSystemMonitor.Event {
+    fileprivate var itemIsDirectory: Bool? {
+        switch kind {
+        case .itemRemoved(.file): return false
+        case .itemRemoved(.dir): return true
+        default: break
+        }
 
-    /// Check if the path represents a directory
-    fileprivate var isDirectory: Bool {
+        guard let item else { return nil }
         var isDirectory: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: self, isDirectory: &isDirectory)
-        return exists && isDirectory.boolValue
+        guard FileManager.default.fileExists(atPath: item.path, isDirectory: &isDirectory) else {
+            return nil
+        }
+        return isDirectory.boolValue
     }
 }
 
