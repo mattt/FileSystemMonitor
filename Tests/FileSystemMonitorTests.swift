@@ -298,6 +298,34 @@ import Testing
 			#expect(result > 0, "Should have received at least one event")
 		}
 
+		@Test("File and directory filters preserve removals", arguments: [false, true])
+		func testRemovalFiltering(directories: Bool) async throws {
+			let root = try createTestDirectory()
+			defer { cleanup(root) }
+			let file = (root as NSString).appendingPathComponent("file")
+			let directory = (root as NSString).appendingPathComponent("directory")
+			try Data().write(to: URL(fileURLWithPath: file))
+			try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: false)
+			try FileManager.default.removeItem(atPath: file)
+			try FileManager.default.removeItem(atPath: directory)
+
+			let events: AsyncStream<FileSystemMonitor.Event>
+			do {
+				let monitor = FileSystemMonitor.monitor(path: root)
+				events = directories ? await monitor.directoryEvents : await monitor.fileEvents
+				monitor.handleEvent(.init(kind: .itemRemoved(item: .file(path: file))))
+				monitor.handleEvent(.init(kind: .itemRemoved(item: .dir(path: directory))))
+				monitor.handleEvent(.init(kind: .itemRemoved(item: .unknown(path: root))))
+				monitor.handleEvent(.init(kind: .itemRemoved(item: .unknown(path: file))))
+			}
+
+			var paths: [String] = []
+			for await event in events {
+				paths.append(event.path)
+			}
+			#expect(paths == (directories ? [directory, root] : [file]))
+		}
+
 		@Test("Event filtering")
 		func testEventFiltering() async throws {
 			let monitoredFolder = try createTestDirectory()
